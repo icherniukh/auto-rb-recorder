@@ -1,0 +1,16 @@
+# config.default.toml — Rekordbox Auto-Recorder defaults
+# Copy to ~/.config/rb-recorder/config.toml to customize.
+
+[recording]
+sample_rate = 48000
+output_dir = "~/Music/RekordboxRecordings"
+
+[trigger]
+silence_threshold_db = -50
+min_silence_duration = 15
+min_segment_duration = 30
+decay_tail = 5
+
+[monitor]
+process_name = "rekordbox"
+poll_interval = 2.0
