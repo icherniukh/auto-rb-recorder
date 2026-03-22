@@ -11,7 +11,7 @@ class Config:
     )
     silence_threshold_db: float = -50
     min_silence_duration: float = 15
-    min_segment_duration: float = 30
+    min_segment_duration: float = 10
     decay_tail: float = 5
     process_name: str = "rekordbox"
     poll_interval: float = 2.0
