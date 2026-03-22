@@ -1,16 +1,29 @@
+import logging
 import os
 import subprocess
+import tempfile
 import threading
-import wave
 from datetime import datetime
 from typing import Optional
 
-import numpy as np
+log = logging.getLogger("rb-recorder")
 
-CHUNK_SIZE = 8192  # bytes per read from AudioCapCLI stdout
+# Capture script template. exec replaces the shell with timeout+AudioCapCLI
+# so that SIGTERM reaches the right process. This approach is required because
+# AudioCapCLI only flushes its output buffer when the parent process blocks
+# on it (subprocess.run / wait) — non-blocking Popen produces 0 bytes.
+_CAPTURE_SCRIPT = """#!/bin/bash
+exec timeout {max_duration} AudioCapCLI --source {source} > "{raw_path}" 2>/dev/null
+"""
 
 
 class AudioCapture:
+    """Captures audio from a named source using AudioCapCLI.
+
+    Runs a blocking capture in a background thread. On stop, kills the
+    capture process and converts the raw float32 PCM to 16-bit WAV via ffmpeg.
+    """
+
     def __init__(self, pid: int, output_dir: str, sample_rate: int = 48000,
                  source_name: str = "rekordbox"):
         self.pid = pid
@@ -18,63 +31,68 @@ class AudioCapture:
         self.sample_rate = sample_rate
         self.source_name = source_name
         self.is_recording = False
-        self._proc: Optional[subprocess.Popen] = None
-        self._wav: Optional[wave.Wave_write] = None
+        self._thread: Optional[threading.Thread] = None
+        self._script_path: Optional[str] = None
+        self._raw_path: Optional[str] = None
         self._output_path: Optional[str] = None
-        self._reader_thread: Optional[threading.Thread] = None
-        self._stop_event = threading.Event()
 
-    def _reader_loop(self):
-        while not self._stop_event.is_set():
-            chunk = self._proc.stdout.read(CHUNK_SIZE)
-            if not chunk:
-                break
-            samples = np.frombuffer(chunk, dtype=np.float32).copy()
-            np.clip(samples, -1.0, 1.0, out=samples)
-            int16_samples = (samples * 32767).astype(np.int16)
-            self._wav.writeframes(int16_samples.tobytes())
+    def _run_capture(self):
+        """Blocking capture — runs in a background thread."""
+        subprocess.run([self._script_path])
 
     def start(self):
         if self.is_recording:
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._raw_path = os.path.join(self.output_dir, f".rb_session_{timestamp}.raw")
         self._output_path = os.path.join(self.output_dir, f"rb_session_{timestamp}.wav")
 
-        self._wav = wave.open(self._output_path, "wb")
-        self._wav.setnchannels(2)
-        self._wav.setsampwidth(2)  # 16-bit PCM
-        self._wav.setframerate(self.sample_rate)
+        # Write capture script
+        fd, self._script_path = tempfile.mkstemp(suffix=".sh")
+        with os.fdopen(fd, "w") as f:
+            f.write(_CAPTURE_SCRIPT.format(
+                max_duration=86400,
+                source=self.source_name,
+                raw_path=self._raw_path,
+            ))
+        os.chmod(self._script_path, 0o755)
 
-        self._proc = subprocess.Popen(
-            ["AudioCapCLI", "--source", self.source_name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-
-        self._stop_event.clear()
-        self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
-        self._reader_thread.start()
+        self._thread = threading.Thread(target=self._run_capture, daemon=True)
+        self._thread.start()
         self.is_recording = True
 
     def stop(self) -> Optional[str]:
         if not self.is_recording:
             return None
 
-        self._stop_event.set()
+        # Kill the capture process (timeout + AudioCapCLI via exec)
+        os.system(f'pkill -f "timeout 86400 AudioCapCLI --source {self.source_name}"')
 
-        if self._proc:
-            self._proc.terminate()
-            self._proc.wait(timeout=5)
-            self._proc = None
+        if self._thread:
+            self._thread.join(timeout=10)
+            self._thread = None
 
-        if self._reader_thread:
-            self._reader_thread.join(timeout=5)
-            self._reader_thread = None
+        # Clean up script
+        if self._script_path and os.path.exists(self._script_path):
+            os.unlink(self._script_path)
+            self._script_path = None
 
-        if self._wav:
-            self._wav.close()
-            self._wav = None
+        # Convert raw float32 PCM to 16-bit WAV
+        if self._raw_path and os.path.exists(self._raw_path):
+            raw_size = os.path.getsize(self._raw_path)
+            log.info(f"Raw capture: {raw_size} bytes ({raw_size / 384000:.1f}s)")
+            if raw_size > 0:
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y",
+                        "-f", "f32le", "-ar", str(self.sample_rate), "-ac", "2",
+                        "-i", self._raw_path,
+                        "-c:a", "pcm_s16le", self._output_path,
+                    ],
+                    capture_output=True,
+                )
+            os.unlink(self._raw_path)
 
         self.is_recording = False
         return self._output_path
