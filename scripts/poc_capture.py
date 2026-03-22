@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""PoC: Capture audio from Rekordbox via ProcTap and write to WAV.
+"""PoC: Capture audio from Rekordbox via AudioCapCLI and write to WAV.
 
-Validates that the ProcTap audio capture pipeline works end-to-end.
-Captures float32 PCM from the target process, converts to int16,
-and writes a standard WAV file.
+Uses Core Audio Taps API (via AudioCapCLI) to capture app-specific audio.
 
 Usage:
     python scripts/poc_capture.py [duration_seconds]
 """
 
+import shutil
 import subprocess
 import sys
 import time
@@ -17,28 +16,36 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-from proctap import STANDARD_CHANNELS, STANDARD_SAMPLE_RATE, ProcessAudioCapture
+
+SAMPLE_RATE = 48000
+CHANNELS = 2
+CHUNK_SIZE = 8192
 
 
-def find_rekordbox_pid() -> int:
-    """Find Rekordbox PID via pgrep. Exits if not running."""
-    try:
-        result = subprocess.run(
-            ["pgrep", "-x", "rekordbox"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        pid = int(result.stdout.strip().splitlines()[0])
-        return pid
-    except (subprocess.CalledProcessError, ValueError, IndexError):
-        print("ERROR: Rekordbox is not running.", file=sys.stderr)
-        print("Start Rekordbox and try again.", file=sys.stderr)
+def check_prerequisites() -> None:
+    if not shutil.which("AudioCapCLI"):
+        print("ERROR: AudioCapCLI not found in PATH.", file=sys.stderr)
+        print("Install: https://github.com/pi0neerpat/AudioCapCLI/releases", file=sys.stderr)
         sys.exit(1)
+
+    result = subprocess.run(["pgrep", "-x", "rekordbox"], capture_output=True, text=True)
+    if result.returncode != 0:
+        print("ERROR: Rekordbox is not running.", file=sys.stderr)
+        sys.exit(1)
+
+    # Verify AudioCapCLI can see Rekordbox
+    result = subprocess.run(
+        ["AudioCapCLI", "--list-sources"],
+        capture_output=True, text=True, timeout=5,
+    )
+    if "rekordbox" not in result.stdout.lower():
+        print("ERROR: AudioCapCLI cannot see Rekordbox audio.", file=sys.stderr)
+        print("Check System Audio Recording permission.", file=sys.stderr)
+        sys.exit(1)
+    print("AudioCapCLI: OK (Rekordbox audio source found)")
 
 
 def main() -> None:
-    # Parse optional duration argument
     duration = 10.0
     if len(sys.argv) > 1:
         try:
@@ -47,51 +54,51 @@ def main() -> None:
                 raise ValueError
         except ValueError:
             print(f"ERROR: Invalid duration: {sys.argv[1]}", file=sys.stderr)
-            print("Usage: poc_capture.py [duration_seconds]", file=sys.stderr)
             sys.exit(1)
 
-    # Find Rekordbox
-    pid = find_rekordbox_pid()
-    print(f"Found Rekordbox (PID {pid})")
+    check_prerequisites()
 
-    # Prepare output file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = Path(f"poc_capture_{timestamp}.wav")
 
-    # Open WAV file for writing (int16, stereo, 48kHz)
     wf = wave.open(str(output_path), "wb")
-    wf.setnchannels(STANDARD_CHANNELS)
-    wf.setsampwidth(2)  # 2 bytes for int16
-    wf.setframerate(STANDARD_SAMPLE_RATE)
+    wf.setnchannels(CHANNELS)
+    wf.setsampwidth(2)
+    wf.setframerate(SAMPLE_RATE)
 
-    frames_written = 0
+    proc = subprocess.Popen(
+        ["AudioCapCLI", "--source", "rekordbox"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
 
-    def on_data(pcm: bytes, frames: int) -> None:
-        """Callback: convert float32 PCM to int16 and write to WAV."""
-        nonlocal frames_written
-        samples = np.frombuffer(pcm, dtype=np.float32)
-        # Clip to [-1.0, 1.0] to avoid int16 overflow, then convert
-        np.clip(samples, -1.0, 1.0, out=samples)
-        int16_samples = (samples * 32767).astype(np.int16)
-        wf.writeframes(int16_samples.tobytes())
-        frames_written += frames
-
-    # Start capture
-    cap = ProcessAudioCapture(pid=pid, on_data=on_data)
     print(f"Capturing {duration}s of audio to {output_path} ...")
-    cap.start()
+    frames_written = 0
+    start_time = time.monotonic()
 
     try:
-        time.sleep(duration)
+        while time.monotonic() - start_time < duration:
+            chunk = proc.stdout.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            samples = np.frombuffer(chunk, dtype=np.float32).copy()
+            np.clip(samples, -1.0, 1.0, out=samples)
+            int16_samples = (samples * 32767).astype(np.int16)
+            wf.writeframes(int16_samples.tobytes())
+            frames_written += len(int16_samples) // CHANNELS
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
     finally:
-        cap.stop()
-        cap.close()
+        proc.terminate()
+        proc.wait(timeout=5)
         wf.close()
 
-    total_seconds = frames_written / STANDARD_SAMPLE_RATE
-    print(f"Done. Wrote {frames_written} frames ({total_seconds:.1f}s) to {output_path}")
+    total_seconds = frames_written / SAMPLE_RATE
+    if frames_written == 0:
+        print("ERROR: No audio captured.", file=sys.stderr)
+        sys.exit(1)
+    else:
+        print(f"Done. Wrote {frames_written} frames ({total_seconds:.1f}s) to {output_path}")
 
 
 if __name__ == "__main__":

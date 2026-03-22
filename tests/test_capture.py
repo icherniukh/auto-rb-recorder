@@ -1,5 +1,4 @@
 import os
-import struct
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
@@ -7,28 +6,36 @@ from src.capture import AudioCapture
 
 
 class TestAudioCapture(unittest.TestCase):
-    @patch("src.capture.ProcessAudioCapture")
-    def test_start_opens_wav_and_starts_tap(self, MockPAC):
+    @patch("src.capture.subprocess.Popen")
+    def test_start_opens_wav_and_spawns_process(self, mock_popen):
+        mock_proc = MagicMock()
+        mock_proc.stdout.read.return_value = b""
+        mock_popen.return_value = mock_proc
+
         with tempfile.TemporaryDirectory() as tmpdir:
             cap = AudioCapture(pid=12345, output_dir=tmpdir, sample_rate=48000)
             cap.start()
 
-            MockPAC.assert_called_once()
-            MockPAC.return_value.start.assert_called_once()
+            mock_popen.assert_called_once()
+            args = mock_popen.call_args[0][0]
+            self.assertEqual(args[0], "AudioCapCLI")
+            self.assertIn("--source", args)
             self.assertTrue(cap.is_recording)
-            self.assertIsNotNone(cap._output_path)
             self.assertTrue(os.path.exists(cap._output_path))
             cap.stop()
 
-    @patch("src.capture.ProcessAudioCapture")
-    def test_stop_closes_tap_and_wav(self, MockPAC):
+    @patch("src.capture.subprocess.Popen")
+    def test_stop_terminates_process_and_closes_wav(self, mock_popen):
+        mock_proc = MagicMock()
+        mock_proc.stdout.read.return_value = b""
+        mock_popen.return_value = mock_proc
+
         with tempfile.TemporaryDirectory() as tmpdir:
             cap = AudioCapture(pid=12345, output_dir=tmpdir, sample_rate=48000)
             cap.start()
             output_path = cap.stop()
 
-            MockPAC.return_value.stop.assert_called_once()
-            MockPAC.return_value.close.assert_called_once()
+            mock_proc.terminate.assert_called_once()
             self.assertFalse(cap.is_recording)
             self.assertTrue(output_path.endswith(".wav"))
 
@@ -37,20 +44,24 @@ class TestAudioCapture(unittest.TestCase):
         result = cap.stop()
         self.assertIsNone(result)
 
-    @patch("src.capture.ProcessAudioCapture")
-    def test_on_data_writes_to_wav(self, MockPAC):
+    @patch("src.capture.subprocess.Popen")
+    def test_reader_writes_audio_to_wav(self, mock_popen):
+        import numpy as np
+
+        # Simulate AudioCapCLI outputting 2 chunks then EOF
+        audio = np.random.uniform(-0.5, 0.5, size=2048).astype(np.float32)
+        audio_bytes = audio.tobytes()
+        mock_proc = MagicMock()
+        mock_proc.stdout.read.side_effect = [audio_bytes, b""]
+        mock_popen.return_value = mock_proc
+
         with tempfile.TemporaryDirectory() as tmpdir:
             cap = AudioCapture(pid=12345, output_dir=tmpdir, sample_rate=48000)
             cap.start()
 
-            # Extract the on_data callback that was passed to ProcessAudioCapture
-            _, kwargs = MockPAC.call_args
-            on_data = kwargs["on_data"]
-
-            # Simulate receiving audio data: 100 frames of stereo float32 silence
-            import numpy as np
-            silence = np.zeros(100 * 2, dtype=np.float32)  # 100 frames x 2 channels
-            on_data(silence.tobytes(), 100)
+            # Give reader thread time to process
+            import time
+            time.sleep(0.1)
 
             output_path = cap.stop()
             self.assertTrue(os.path.getsize(output_path) > 44)  # > WAV header
