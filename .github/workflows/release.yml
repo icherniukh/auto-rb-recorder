@@ -46,9 +46,15 @@ jobs:
 
       - name: Code Sign Binary
         run: |
-          # The --timestamp flag is strictly required for Notarization
-          # The --options runtime enables the Hardened Runtime, also required
-          xcrun codesign --force --options runtime --timestamp --deep --sign "Developer ID Application" dist/auto-rb-recorder
+          # --options runtime: Hardened Runtime (required for notarization)
+          # --timestamp: required for notarization
+          # --entitlements: disable-library-validation allows PyInstaller's bundled
+          #   Python.framework (signed by PSF, different Team ID) to load at runtime
+          # Note: --deep is intentionally omitted — it is for .app bundles, not
+          #   --onefile binaries, and causes signing issues here
+          xcrun codesign --force --options runtime --timestamp \
+            --entitlements entitlements.plist \
+            --sign "Developer ID Application" dist/auto-rb-recorder
 
       - name: Package Release
         run: |
