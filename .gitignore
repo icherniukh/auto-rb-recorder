@@ -33,3 +33,6 @@ build/
 
 # Beads issue tracker (removed from project)
 .beads/
+
+# uv lockfile (no dependencies, not useful to track)
+uv.lock
