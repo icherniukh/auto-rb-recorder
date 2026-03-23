@@ -50,6 +50,13 @@ jobs:
           cd release_package
           tar -czvf ../auto-rb-recorder-macos-preview.tar.gz *
 
+      - name: Update Preview Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f preview
+          git push -f origin preview
+
       - name: Update Preview Release
         uses: softprops/action-gh-release@v2
         with:
