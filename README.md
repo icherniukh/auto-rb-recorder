@@ -52,7 +52,16 @@ bash scripts/install.sh
 ```
 
 ### macOS Permissions
-You **must** give the generated `dist/auto-rb-recorder` application **Screen Recording** permissions in `System Settings -> Privacy & Security`. This is required for *any* application to utilize `Core Audio Taps` on macOS 14.2+.
+
+macOS handles Core Audio privacy dynamically. **Permission is NOT requested during installation.**
+
+Instead, the **first time you launch Pioneer Rekordbox**, our background daemon will attempt to connect to it. macOS will immediately interject with a system dialog requesting **"Screen Recording"** permissions for `auto-rb-recorder`.
+
+To permanently approve it:
+1. When the macOS dialog appears, click **Open System Settings**.
+2. Alternatively, manually open **System Settings -> Privacy & Security -> Screen Recording**.
+3. Toggle the switch ON for exactly: `auto-rb-recorder` (or navigate to `dist/auto-rb-recorder` to add it).
+4. You will never be prompted again.
 
 ## Configuration
 
