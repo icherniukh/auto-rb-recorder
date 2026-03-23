@@ -86,3 +86,13 @@ jobs:
         with:
           files: auto-rb-recorder-macos-universal.zip
           generate_release_notes: true
+
+      - name: Update Homebrew Tap
+        uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          formula-name: auto-rb-recorder
+          homebrew-tap: icherniukh/homebrew-tap
+          base-branch: main
+          download-url: https://github.com/icherniukh/auto-rb-recorder/releases/download/${{ github.ref_name }}/auto-rb-recorder-macos-universal.zip
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
