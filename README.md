@@ -1,71 +1,44 @@
-# Rekordbox Auto-Recorder
+# auto-rb-recorder
 
-A macOS daemon that automatically captures a DJ's audio output from Pioneer Rekordbox directly using the Core Audio Taps API.
+A macOS background daemon that automatically records your Pioneer Rekordbox DJ sets. It monitors when Rekordbox is running and intercepts the main audio output directly from the system.
 
-When Rekordbox launches, recording starts silently. When Rekordbox quits, the recording automatically stops, converts the raw capture into a standard WAV or MP3, and natively isolates the set into a single file by stripping away gigabytes of idle silence before and after the set.
+## How it works
 
-## Architecture & Data Flow
+When you open Pioneer Rekordbox, the recorder wakes up and hooks into the audio stream. As long as you are actively playing music, it saves the audio to your disk.
 
-```
-Process Monitor ──► Audio Capture ──► Silence State Machine
-(pgrep polling)     (audiotee→raw)    (ring buffer memory limit)
-       │                  │                    │
-       ▼                  ▼                    ▼
-  Rekordbox PID    .raw float32 PCM      rb_session_{date}.wav
-  start/stop          → WAV/MP3 
-```
-
-**Data flow:** `audiotee --include-processes PID` → python chunk stream → circular buffer silence evaluation → `ffmpeg` background conversion to WAV/MP3.
-
-## Features
-
-- **Pioneer Rekordbox Support** — Successfully taps into Rekordbox's custom audio engine, bypassing the usual ScreenCaptureKit restrictions that lead to dead/silent screen recordings.
-- **Smart Silence Autodetection** — Live audio is evaluated chunk-by-chunk for volume (RMS). Recording completely pauses during extended silence (e.g. before the club opens), effectively splitting huge, day-long recording sessions into isolated 1-2 hour sets automatically without disk bloat.
-- **Background Daemon** — Detects Rekordbox launch and exit via process polling, running silently alongside your setup.
-- **WAV & MP3 Export** — High quality natively exported tracks. Defaults to WAV but MP3 320k encoding can be selected.
-- **Graceful Termination** — Even if Rekordbox crashes, the isolated ring buffer ensures your mix is completely saved, flushed, and converted successfully.
-
-## Prerequisites
-
-- macOS 14.2+ (Core Audio Taps API requirement)
-- `brew install ffmpeg`
-- `audiotee` (bundled via submodule or built from source).
+It evaluates the audio stream live:
+- **Silence Stripping:** If Rekordbox is open but not playing audio for an extended period, recording pauses to save disk space.
+- **Mix Splitting:** Continuous silence breaks your sessions into separate audio files.
+- **Auto Export:** When you close Rekordbox, the recorder exports the raw audio chunks into `.wav` or `.mp3` files in your `~/Music/auto-rb-recorder` folder.
 
 ## Installation
 
-This project is built and installed using `pyinstaller` to create a compiled app executable, helping bypass macOS dynamic privacy issues regarding Screen Recording permissions.
+The recommended installation method is via Homebrew:
 
 ```bash
-# 1. Clone the repository and submodules
-git clone --recurse-submodules https://github.com/your-username/auto-rb-recorder.git
-cd auto-rb-recorder
-
-# 2. Build the python daemon
-uv pip install pyinstaller
-bash scripts/build.sh
-
-# 3. Setup the Config
-cp config.default.toml ~/.config/rb-recorder/config.toml
-
-# 4. Install the LaunchAgent
-bash scripts/install.sh
+brew tap icherniukh/tap
+brew install auto-rb-recorder
 ```
 
-### macOS Permissions
+To run the daemon automatically in the background at log in:
+```bash
+brew services start auto-rb-recorder
+```
 
-macOS handles Core Audio privacy dynamically. **Permission is NOT requested during installation.**
+## Permissions (macOS 14+)
 
-Instead, the **first time you launch Pioneer Rekordbox**, our background daemon will attempt to connect to it. macOS will immediately interject with a system dialog requesting **"Screen Recording"** permissions for `auto-rb-recorder`.
+In order to capture your system's audio output, macOS requires explicit consent.
 
-To permanently approve it:
-1. When the macOS dialog appears, click **Open System Settings**.
-2. Alternatively, manually open **System Settings -> Privacy & Security -> Screen Recording**.
-3. Toggle the switch ON for exactly: `auto-rb-recorder` (or navigate to `dist/auto-rb-recorder` to add it).
-4. You will never be prompted again.
+The first time you open Rekordbox after installing, a system dialog will request **Screen Recording** permissions for `auto-rb-recorder`.
+
+To approve it:
+1. When the dialog appears, click **Open System Settings**.
+2. Toggle the switch ON for `auto-rb-recorder` (or navigate to `/opt/homebrew/bin/auto-rb-recorder` to add it manually).
+3. If missed, open **System Settings -> Privacy & Security -> Screen Recording** to toggle it manually.
 
 ## Configuration
 
-All parameters are tunable via `~/.config/rb-recorder/config.toml`.
+You can customize the silence detection thresholds and the output directory by editing `~/.config/rb-recorder/config.toml`:
 
 ```toml
 [recording]
@@ -76,23 +49,16 @@ export_format = "wav"  # allow "wav" or "mp3"
 [trigger]
 silence_threshold_db = -50
 min_silence_duration = 15
-decay_tail = 5
-
-[monitor]
-process_name = "rekordbox"
-poll_interval = 2.0
 ```
 
-## Workflows & Releases
+## Compiling from Source
 
-This project relies on GitHub Actions to securely build and distribute the app executable (a `universal2` macOS Mach-O binary) to bypass macOS Screen Recording permission issues.
-
-### Official Releases
-Official releases are triggered natively via GitHub tags. To publish a new stable version (e.g. `v1.0.0`), simply create a lightweight Git tag locally and push it to GitHub. Make sure the tag name starts with a `v`:
-
+If you want to build the executable manually on your system:
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git clone --recurse-submodules https://github.com/icherniukh/auto-rb-recorder.git
+cd auto-rb-recorder
+uv pip install pyinstaller
+bash scripts/build.sh
 ```
 
-GitHub Actions will automatically intercept this push, compile the universal app bundle, and attach it to a brand new `v1.0.0` stable release block on your repository's front page!
+Official releases are packaged as a `universal2` macOS executable, signed with an Apple Developer Application ID, notarized by Apple via `xcrun notarytool`, and uploaded automatically via GitHub Actions.
