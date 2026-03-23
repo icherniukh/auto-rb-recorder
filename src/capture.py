@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import shutil
 import subprocess
 import threading
 from array import array
@@ -14,6 +15,18 @@ log = logging.getLogger("rb-recorder")
 def db_to_rms(db: float) -> float:
     # 0 dBFS = 32768 for 16-bit audio
     return 32768.0 * (10.0 ** (db / 20.0))
+
+
+def _find_executable(name: str) -> str:
+    path = shutil.which(name)
+    if path:
+        return path
+    # macOS LaunchAgents often lack standard interactive PATHs
+    for fallback in [f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}", f"/usr/bin/{name}"]:
+        if os.path.exists(fallback):
+            return fallback
+    return name
+
 
 
 class AudioCapture:
@@ -80,7 +93,7 @@ class AudioCapture:
                     log.info(f"Converting {raw_p} to {out_p}")
                     
                     cmd = [
-                        "ffmpeg", "-y",
+                        _find_executable("ffmpeg"), "-y",
                         "-f", "s16le", "-ar", str(sr), "-ac", "2",
                         "-i", raw_p
                     ]
@@ -158,7 +171,7 @@ class AudioCapture:
 
         self._proc = subprocess.Popen(
             [
-                "audiotee",
+                _find_executable("audiotee"),
                 "--include-processes", str(self.pid),
                 "--sample-rate", str(self.sample_rate),
                 "--stereo",
