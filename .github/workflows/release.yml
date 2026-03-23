@@ -54,7 +54,6 @@ jobs:
         run: |
           mkdir -p release_package
           cp dist/auto-rb-recorder release_package/
-          cp install/com.rb-recorder.plist release_package/
           cp config.default.toml release_package/
           cd release_package
           # Apple Notary tool heavily prefers structural zips over tar.gz payloads
