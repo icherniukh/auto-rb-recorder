@@ -46,8 +46,9 @@ jobs:
 
       - name: Code Sign Binary
         run: |
-          # Use --options runtime to enable hardened runtime required by Notary Service
-          xcrun codesign --force --options runtime --deep --sign "Developer ID Application" dist/auto-rb-recorder
+          # The --timestamp flag is strictly required for Notarization
+          # The --options runtime enables the Hardened Runtime, also required
+          xcrun codesign --force --options runtime --timestamp --deep --sign "Developer ID Application" dist/auto-rb-recorder
 
       - name: Package Release
         run: |
@@ -61,17 +62,19 @@ jobs:
 
       - name: Notarize Release
         env:
-          NOTARIZATION_API_KEY: ${{ secrets.NOTARIZATION_API_KEY }}
+          NOTARIZATION_KEY_P8: ${{ secrets.NOTARIZATION_KEY_P8 }}
           NOTARIZATION_KEY_ID: ${{ secrets.NOTARIZATION_KEY_ID }}
           NOTARIZATION_ISSUER_ID: ${{ secrets.NOTARIZATION_ISSUER_ID }}
         run: |
-          echo "$NOTARIZATION_API_KEY" > AuthKey.p8
+          # Save the P8 key to a temporary file
+          AUTH_KEY_PATH=$RUNNER_TEMP/AuthKey_${NOTARIZATION_KEY_ID}.p8
+          echo "$NOTARIZATION_KEY_P8" > $AUTH_KEY_PATH
+          
           xcrun notarytool submit auto-rb-recorder-macos-universal.zip \
-            --key AuthKey.p8 \
+            --key "$AUTH_KEY_PATH" \
             --key-id "$NOTARIZATION_KEY_ID" \
             --issuer "$NOTARIZATION_ISSUER_ID" \
             --wait
-          rm AuthKey.p8
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
