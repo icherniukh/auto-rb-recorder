@@ -73,3 +73,20 @@ decay_tail = 5
 process_name = "rekordbox"
 poll_interval = 2.0
 ```
+
+## Workflows & Releases
+
+This project relies on GitHub Actions to securely build and distribute the app executable (a `universal2` macOS Mach-O binary) to bypass macOS Screen Recording permission issues.
+
+### Preview Builds
+Every commit pushed directly to `main` instantly generates a bleeding-edge [Preview Build](https://github.com/icherniukh/auto-rb-recorder/releases/tag/preview). If you want to test the newest features before they reach an official release, download the `auto-rb-recorder-macos-preview.tar.gz` asset from that rolling release tag.
+
+### Manual Stable Releases
+Official releases are triggered natively via GitHub tags. To publish a new stable version (e.g. `v1.0.0`), simply create a lightweight Git tag locally and push it to GitHub. Make sure the tag name starts with a `v`:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+GitHub Actions will automatically intercept this push, compile the universal app bundle, and attach it to a brand new `v1.0.0` stable release block on your repository's front page!

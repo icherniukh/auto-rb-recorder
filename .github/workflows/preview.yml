@@ -1,0 +1,61 @@
+name: Preview Build
+
+on:
+  push:
+    branches:
+      - main
+    # Ignore pushes that are just tagging versions
+    tags-ignore:
+      - 'v*'
+
+jobs:
+  build_preview:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install pyinstaller
+
+      - name: Build Executable
+        run: |
+          source .venv/bin/activate
+          bash scripts/build.sh
+
+      - name: Package Release
+        run: |
+          mkdir -p release_package
+          cp dist/auto-rb-recorder release_package/
+          cp install/com.rb-recorder.plist release_package/
+          cp config.default.toml release_package/
+          cd release_package
+          tar -czvf ../auto-rb-recorder-macos-preview.tar.gz *
+
+      - name: Update Preview Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "preview"
+          name: "Preview Build (Latest main)"
+          body: "This is a rolling preview build automatically compiled from the latest push to the main branch. Use this to test the absolute bleeding edge features!"
+          prerelease: true
+          make_latest: false
+          files: auto-rb-recorder-macos-preview.tar.gz
