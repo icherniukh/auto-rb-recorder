@@ -47,7 +47,7 @@ jobs:
       - name: Code Sign Binary
         run: |
           # Use --options runtime to enable hardened runtime required by Notary Service
-          codesign --force --options runtime --deep --sign "Developer ID Application" dist/auto-rb-recorder
+          xcrun codesign --force --options runtime --deep --sign "Developer ID Application" dist/auto-rb-recorder
 
       - name: Package Release
         run: |
