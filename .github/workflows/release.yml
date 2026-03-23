@@ -48,7 +48,7 @@ jobs:
           tar -czvf ../auto-rb-recorder-macos-arm64.tar.gz *
 
       - name: Upload Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: auto-rb-recorder-macos-arm64.tar.gz
           generate_release_notes: true
