@@ -30,7 +30,7 @@ class Config:
         if "sample_rate" in rec:
             cfg.sample_rate = rec["sample_rate"]
         if "output_dir" in rec:
-            cfg.output_dir = rec["output_dir"]
+            cfg.output_dir = os.path.expanduser(rec["output_dir"])
         if "export_format" in rec:
             cfg.export_format = rec["export_format"]
         if "silence_threshold_db" in trig:
