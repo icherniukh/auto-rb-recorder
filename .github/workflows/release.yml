@@ -13,17 +13,17 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -34,7 +34,7 @@ jobs:
           uv pip install pyinstaller
 
       - name: Install Certificates
-        uses: apple-actions/import-codesign-certs@v3
+        uses: apple-actions/import-codesign-certs@v6
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -74,7 +74,7 @@ jobs:
           # Save the P8 key to a temporary file
           AUTH_KEY_PATH=$RUNNER_TEMP/AuthKey_${NOTARIZATION_KEY_ID}.p8
           echo "$NOTARIZATION_KEY_P8" > $AUTH_KEY_PATH
-          
+
           xcrun notarytool submit auto-rb-recorder-macos-universal.zip \
             --key "$AUTH_KEY_PATH" \
             --key-id "$NOTARIZATION_KEY_ID" \
@@ -82,13 +82,13 @@ jobs:
             --wait
 
       - name: Upload Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.1
         with:
           files: auto-rb-recorder-macos-universal.zip
           generate_release_notes: true
 
       - name: Update Homebrew Tap
-        uses: mislav/bump-homebrew-formula-action@v3
+        uses: mislav/bump-homebrew-formula-action@v4.1
         with:
           formula-name: auto-rb-recorder
           homebrew-tap: icherniukh/homebrew-tap
