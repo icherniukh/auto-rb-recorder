@@ -13,7 +13,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.decay_tail, 5)
         self.assertEqual(cfg.poll_interval, 2.0)
         self.assertEqual(cfg.process_name, "rekordbox")
-        self.assertTrue(cfg.output_dir.endswith("RekordboxRecordings"))
+        self.assertTrue(cfg.output_dir.endswith("auto-rb-recorder"))
 
     def test_load_from_toml(self):
         toml_content = (

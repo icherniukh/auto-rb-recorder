@@ -7,7 +7,6 @@ from typing import Optional
 from src.capture import AudioCapture
 from src.config import Config
 from src.process_monitor import ProcessMonitor
-from src.splitter import SilenceSplitter
 
 log = logging.getLogger("rb-recorder")
 
@@ -24,12 +23,6 @@ class RecorderDaemon:
         self._monitor.on_start = self._on_rekordbox_start
         self._monitor.on_stop = self._on_rekordbox_stop
 
-        self._splitter = SilenceSplitter(
-            silence_threshold_db=config.silence_threshold_db,
-            min_silence_duration=config.min_silence_duration,
-            min_segment_duration=config.min_segment_duration,
-        )
-
     def _on_rekordbox_start(self, pid: int):
         log.info(f"Rekordbox detected (PID {pid}). Starting recording.")
         os.makedirs(self.config.output_dir, exist_ok=True)
@@ -37,6 +30,10 @@ class RecorderDaemon:
             pid=pid,
             output_dir=self.config.output_dir,
             sample_rate=self.config.sample_rate,
+            silence_threshold_db=self.config.silence_threshold_db,
+            min_silence_duration=self.config.min_silence_duration,
+            decay_tail=self.config.decay_tail,
+            export_format=self.config.export_format,
         )
         self._capture.start()
 
@@ -44,14 +41,8 @@ class RecorderDaemon:
         if not self._capture:
             return
         log.info("Rekordbox closed. Stopping recording.")
-        output_path = self._capture.stop()
+        self._capture.stop()
         self._capture = None
-
-        if output_path and os.path.exists(output_path):
-            log.info(f"Splitting session: {output_path}")
-            files = self._splitter.split(output_path, self.config.output_dir)
-            log.info(f"Created {len(files)} set file(s): {files}")
-
     def run(self):
         self._running = True
         signal.signal(signal.SIGTERM, self._handle_shutdown)

@@ -7,12 +7,13 @@ from dataclasses import dataclass, field
 class Config:
     sample_rate: int = 48000
     output_dir: str = field(
-        default_factory=lambda: os.path.expanduser("~/Music/RekordboxRecordings")
+        default_factory=lambda: os.path.expanduser("~/Music/auto-rb-recorder")
     )
     silence_threshold_db: float = -50
     min_silence_duration: float = 15
     min_segment_duration: float = 10
     decay_tail: float = 5
+    export_format: str = "wav"
     process_name: str = "rekordbox"
     poll_interval: float = 2.0
 
@@ -30,6 +31,8 @@ class Config:
             cfg.sample_rate = rec["sample_rate"]
         if "output_dir" in rec:
             cfg.output_dir = rec["output_dir"]
+        if "export_format" in rec:
+            cfg.export_format = rec["export_format"]
         if "silence_threshold_db" in trig:
             cfg.silence_threshold_db = trig["silence_threshold_db"]
         if "min_silence_duration" in trig:

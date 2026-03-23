@@ -1,0 +1,55 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build_release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -r requirements.md
+          uv pip install pyinstaller
+
+      - name: Build Executable
+        run: |
+          source .venv/bin/activate
+          bash scripts/build.sh
+
+      - name: Package Release
+        run: |
+          mkdir -p release_package
+          cp dist/auto-rb-recorder release_package/
+          cp install/com.rb-recorder.plist release_package/
+          cp config.default.toml release_package/
+          cd release_package
+          tar -czvf ../auto-rb-recorder-macos-arm64.tar.gz *
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: auto-rb-recorder-macos-arm64.tar.gz
+          generate_release_notes: true

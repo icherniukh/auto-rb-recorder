@@ -3,7 +3,8 @@
 
 [recording]
 sample_rate = 48000
-output_dir = "~/Music/RekordboxRecordings"
+output_dir = "~/Music/auto-rb-recorder"
+export_format = "wav"  # allow "wav" or "mp3"
 
 [trigger]
 silence_threshold_db = -50
