@@ -1,0 +1,41 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          uv venv
+          source .venv/bin/activate
+          # We need pytest but requirements.md might not have it depending on the environment,
+          # so we explicitly install it to be safe alongside the project requirements.
+          uv pip install pytest
+          if [ -f "requirements.md" ]; then uv pip install -r requirements.md; fi
+
+      - name: Run pytest
+        run: |
+          source .venv/bin/activate
+          uv run pytest tests/ -v
