@@ -7,11 +7,10 @@ class TestProcessMonitor(unittest.TestCase):
     @patch("src.process_monitor.time.sleep")
     @patch("src.process_monitor.ProcessMonitor._find_pid")
     def test_detects_process_start(self, mock_find, mock_sleep):
-        # First poll: None. Second poll: None. Third poll: 12345.
-        # After startup delay re-check: 12345 (still running).
+        # Poll: None, None, 12345 (detected), re-check after delay: 12345 (confirmed)
         mock_find.side_effect = [None, None, 12345, 12345]
         events = []
-        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0)
+        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0, stop_delay=0)
         mon.on_start = lambda pid: events.append(("start", pid))
         mon.on_stop = lambda: events.append(("stop",))
         for _ in range(3):
@@ -21,10 +20,10 @@ class TestProcessMonitor(unittest.TestCase):
     @patch("src.process_monitor.time.sleep")
     @patch("src.process_monitor.ProcessMonitor._find_pid")
     def test_detects_process_stop(self, mock_find, mock_sleep):
-        # Poll 1: 12345 (start), re-check: 12345. Poll 2: 12345. Poll 3: None (stop).
-        mock_find.side_effect = [12345, 12345, 12345, None]
+        # Poll 1: 12345 (start+confirm). Poll 2: 12345. Poll 3: None, re-check: None (stop)
+        mock_find.side_effect = [12345, 12345, 12345, None, None]
         events = []
-        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0)
+        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0, stop_delay=0)
         mon.on_start = lambda pid: events.append(("start", pid))
         mon.on_stop = lambda: events.append(("stop",))
         for _ in range(3):
@@ -34,10 +33,9 @@ class TestProcessMonitor(unittest.TestCase):
     @patch("src.process_monitor.time.sleep")
     @patch("src.process_monitor.ProcessMonitor._find_pid")
     def test_ignores_duplicate_start(self, mock_find, mock_sleep):
-        # Poll 1: 12345 (start), re-check: 12345. Poll 2-3: 12345 (no event).
         mock_find.side_effect = [12345, 12345, 12345, 12345]
         events = []
-        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0)
+        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0, stop_delay=0)
         mon.on_start = lambda pid: events.append(("start", pid))
         mon.on_stop = lambda: events.append(("stop",))
         for _ in range(3):
@@ -50,11 +48,26 @@ class TestProcessMonitor(unittest.TestCase):
         # Process appears then disappears during startup delay
         mock_find.side_effect = [12345, None]
         events = []
-        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0)
+        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0, stop_delay=0)
         mon.on_start = lambda pid: events.append(("start", pid))
         mon.on_stop = lambda: events.append(("stop",))
         mon.poll_once()
-        self.assertEqual(events, [])  # No start event fired
+        self.assertEqual(events, [])
+
+    @patch("src.process_monitor.time.sleep")
+    @patch("src.process_monitor.ProcessMonitor._find_pid")
+    def test_ignores_brief_disappearance(self, mock_find, mock_sleep):
+        # Process starts, then briefly disappears but comes back during stop delay
+        # Poll 1: 12345 (start+confirm). Poll 2: None (gone), re-check: 67890 (back!)
+        mock_find.side_effect = [12345, 12345, None, 67890]
+        events = []
+        mon = ProcessMonitor("rekordbox", poll_interval=0, startup_delay=0, stop_delay=0)
+        mon.on_start = lambda pid: events.append(("start", pid))
+        mon.on_stop = lambda: events.append(("stop",))
+        mon.poll_once()  # start
+        mon.poll_once()  # brief disappearance — should NOT fire stop
+        self.assertEqual(events, [("start", 12345)])
+        self.assertEqual(mon._current_pid, 67890)  # PID updated
 
 
 if __name__ == "__main__":
