@@ -1,150 +1,95 @@
-# Agent Instructions
+# Rekordbox Auto-Recorder — Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+## Overview
 
-## Quick Reference
+A macOS daemon that automatically captures a DJ's audio output from Pioneer Rekordbox. When Rekordbox launches, recording starts silently. When Rekordbox quits, the recording stops, converts to WAV, and splits into individual set files by silence detection.
+
+**Stack:** Python 3.12+ (orchestration), audiotee (Core Audio Taps capture), FFmpeg (encoding + splitting), macOS 14.2+
+
+**Key constraint:** ScreenCaptureKit cannot capture Rekordbox audio (returns all zeros) because Rekordbox uses a custom audio engine. The project uses Core Audio Taps (`AudioHardwareCreateProcessTap`) via `audiotee` instead. See `research-findings.md` for the full technical investigation.
+
+## Architecture
+
+```
+Process Monitor ──► Audio Capture ──► Silence Splitter
+(pgrep polling)     (audiotee→raw)    (ffmpeg silencedetect)
+       │                  │                    │
+       ▼                  ▼                    ▼
+  Rekordbox PID    .raw float32 PCM      _set01.wav, _set02.wav, ...
+  start/stop          → WAV via ffmpeg
+```
+
+**Data flow:** `audiotee --include-processes PID --flush` → raw s16le PCM file → `ffmpeg -f s16le` → WAV → `ffmpeg silencedetect` → split WAVs
+
+## Working / Verified Features
+
+- **Audio capture from Rekordbox** — audiotee captures at 48kHz stereo via Core Audio Taps. Verified: correct audio, proper levels (-19 dB RMS on music). `--flush` flag required for subprocess compatibility.
+- **Process monitor** — detects Rekordbox launch/exit via `pgrep -x`. Includes startup delay (10s) and stop debounce (10s) to handle Rekordbox's multi-process startup cycle.
+- **WAV conversion** — raw s16le PCM → 16-bit WAV via ffmpeg. Verified with real recordings.
+- **Silence-based splitting** — ffmpeg `silencedetect` parses silence boundaries, splits into individual set files, filters segments shorter than 10s. Verified with synthetic and real audio.
+- **TOML configuration** — all parameters tunable via `~/.config/rb-recorder/config.toml`.
+- **CLI entry point** — `python -m src -v` with config path and verbose flags.
+- **Full lifecycle** — daemon waits → detects Rekordbox → records → Rekordbox quits → stops → converts → splits. Verified E2E.
+- **15 unit tests passing** — all modules have test coverage.
+
+## Known Issues / Not Yet Verified
+
+- **Full lifecycle with music + silence gap** — the splitter works on synthetic audio, but a real test with play→silence→play→quit hasn't been completed clean yet (Rekordbox startup cycle caused short captures in testing).
+- **LaunchAgent** — `install/com.rb-recorder.plist` and `scripts/install.sh` exist but haven't been tested with actual login-time auto-start.
+- **Crash recovery** — if Rekordbox crashes mid-recording, the raw file persists but the WAV conversion + split won't run until the daemon's next cycle. No automatic recovery of orphaned `.raw` files.
+- **Long session stability** — not tested with multi-hour DJ sets. Disk space usage is ~184KB/s (660MB/hour).
+- **audiotee stability** — the user noted audiotee "is not stable nowadays." No issues observed during short tests but long sessions may reveal problems.
+- **Permissions UX** — Screen Recording permission must be granted manually. No guided setup flow.
+
+## Prerequisites
+
+- macOS 14.2+ (Core Audio Taps API)
+- `brew install ffmpeg`
+- `audiotee` binary at `/usr/local/bin/audiotee` (build from https://github.com/makeusabrew/audiotee — `swift build -c release`)
+- Screen Recording permission granted to the terminal app
+- Python 3.12+ with venv: `uv venv && uv pip install pytest`
+
+## Running
+
+```bash
+source .venv/bin/activate
+python -m src -v                    # Run daemon (verbose)
+python -m pytest tests/ -v          # Run tests
+python scripts/poc_capture.py 10    # PoC: capture 10 seconds
+```
+
+## Project Structure
+
+```
+src/
+  __main__.py        CLI entry point
+  daemon.py          Main orchestrator (wires monitor + capture + splitter)
+  process_monitor.py Rekordbox lifecycle detection (pgrep + debounce)
+  capture.py         audiotee subprocess + ffmpeg WAV conversion
+  splitter.py        ffmpeg silencedetect + file splitting
+  config.py          TOML configuration with defaults
+tests/               15 unit tests (pytest)
+scripts/             PoC scripts, diagnostics, install helper
+install/             LaunchAgent plist template
+docs/plans/          Implementation plan
+```
+
+## Issue Tracking
+
+This project uses **bd** (beads) for issue tracking.
 
 ```bash
 bd ready              # Find available work
 bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
+bd update <id> --claim  # Claim work
 bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
 ```
 
-## Non-Interactive Shell Commands
+## Key Decisions & Pitfalls
 
-**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
-
-Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
-
-**Use these forms instead:**
-```bash
-# Force overwrite without prompting
-cp -f source dest           # NOT: cp source dest
-mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
-
-# For recursive operations
-rm -rf directory            # NOT: rm -r directory
-cp -rf source dest          # NOT: cp -r source dest
-```
-
-**Other commands that may prompt:**
-- `scp` - use `-o BatchMode=yes` for non-interactive
-- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
-- `apt-get` - use `-y` flag
-- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
-
-<!-- BEGIN BEADS INTEGRATION profile:full hash:d4f96305 -->
-## Issue Tracking with bd (beads)
-
-**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
-
-### Why bd?
-
-- Dependency-aware: Track blockers and relationships between issues
-- Git-friendly: Dolt-powered version control with native sync
-- Agent-optimized: JSON output, ready work detection, discovered-from links
-- Prevents duplicate tracking systems and confusion
-
-### Quick Start
-
-**Check for ready work:**
-
-```bash
-bd ready --json
-```
-
-**Create new issues:**
-
-```bash
-bd create "Issue title" --description="Detailed context" -t bug|feature|task -p 0-4 --json
-bd create "Issue title" --description="What this issue is about" -p 1 --deps discovered-from:bd-123 --json
-```
-
-**Claim and update:**
-
-```bash
-bd update <id> --claim --json
-bd update bd-42 --priority 1 --json
-```
-
-**Complete work:**
-
-```bash
-bd close bd-42 --reason "Completed" --json
-```
-
-### Issue Types
-
-- `bug` - Something broken
-- `feature` - New functionality
-- `task` - Work item (tests, docs, refactoring)
-- `epic` - Large feature with subtasks
-- `chore` - Maintenance (dependencies, tooling)
-
-### Priorities
-
-- `0` - Critical (security, data loss, broken builds)
-- `1` - High (major features, important bugs)
-- `2` - Medium (default, nice-to-have)
-- `3` - Low (polish, optimization)
-- `4` - Backlog (future ideas)
-
-### Workflow for AI Agents
-
-1. **Check ready work**: `bd ready` shows unblocked issues
-2. **Claim your task atomically**: `bd update <id> --claim`
-3. **Work on it**: Implement, test, document
-4. **Discover new work?** Create linked issue:
-   - `bd create "Found bug" --description="Details about what was found" -p 1 --deps discovered-from:<parent-id>`
-5. **Complete**: `bd close <id> --reason "Done"`
-
-### Auto-Sync
-
-bd automatically syncs via Dolt:
-
-- Each write auto-commits to Dolt history
-- Use `bd dolt push`/`bd dolt pull` for remote sync
-- No manual export/import needed!
-
-### Important Rules
-
-- ✅ Use bd for ALL task tracking
-- ✅ Always use `--json` flag for programmatic use
-- ✅ Link discovered work with `discovered-from` dependencies
-- ✅ Check `bd ready` before asking "what should I work on?"
-- ❌ Do NOT create markdown TODO lists
-- ❌ Do NOT use external issue trackers
-- ❌ Do NOT duplicate tracking systems
-
-For more details, see README.md and docs/QUICKSTART.md.
-
-## Landing the Plane (Session Completion)
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-
-<!-- END BEADS INTEGRATION -->
+- **audiotee requires `--flush`** — without it, stdout buffering prevents subprocess pipe reads from getting data.
+- **audiotee outputs s16le** (not float32) — conversion must use `-f s16le` not `-f f32le`.
+- **AudioCapCLI doesn't work from scripts** — macOS TCC blocks it outside interactive terminals. Don't switch back to it.
+- **ProcTap/ScreenCaptureKit returns all zeros for Rekordbox** — Rekordbox uses a custom audio engine that bypasses ScreenCaptureKit's hooks. Don't revisit this path.
+- **Rekordbox bundle ID is `com.pioneerdj.rekordboxdj`** (not `com.pioneerdj.rekordbox`).
+- **Rekordbox spawns multiple processes during startup** — the process monitor must debounce both start and stop detection.
