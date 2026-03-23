@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "server",
-  "dolt_database": "auto_rb_recorder",
-  "project_id": "c2dfb2a8-ba86-49da-8cf9-5eee3d188ee6"
-}

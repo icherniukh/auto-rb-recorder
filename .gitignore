@@ -30,3 +30,6 @@ build/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# Beads issue tracker (removed from project)
+.beads/

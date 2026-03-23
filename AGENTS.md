@@ -11,13 +11,13 @@
 
 ## Issue Tracking
 
-This project uses **bd** (beads) for issue tracking.
+This project uses **GitHub Issues** for issue tracking.
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
+gh issue list         # Find available work
+gh issue view <num>   # View issue details
+gh issue create       # Create a new issue
+gh issue close <num>  # Close an issue
 ```
 
 ## Key Decisions & Pitfalls
