@@ -31,7 +31,6 @@ jobs:
         run: |
           uv venv
           source .venv/bin/activate
-          if [ -f "docs/requirements.md" ]; then uv pip install -r docs/requirements.md; fi
           uv pip install pyinstaller
 
       - name: Build Executable
