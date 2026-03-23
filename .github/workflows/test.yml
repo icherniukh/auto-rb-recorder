@@ -33,7 +33,7 @@ jobs:
           # We need pytest but requirements.md might not have it depending on the environment,
           # so we explicitly install it to be safe alongside the project requirements.
           uv pip install pytest
-          if [ -f "requirements.md" ]; then uv pip install -r requirements.md; fi
+          if [ -f "docs/requirements.md" ]; then uv pip install -r docs/requirements.md; fi
 
       - name: Run pytest
         run: |
