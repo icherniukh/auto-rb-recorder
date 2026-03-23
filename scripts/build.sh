@@ -10,6 +10,7 @@ uv run pyinstaller --name=auto-rb-recorder \
             --onefile \
             --clean \
             --noconfirm \
+            --target-architecture universal2 \
             --hidden-import=src.config \
             --hidden-import=src.capture \
             --hidden-import=src.daemon \

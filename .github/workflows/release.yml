@@ -45,10 +45,10 @@ jobs:
           cp install/com.rb-recorder.plist release_package/
           cp config.default.toml release_package/
           cd release_package
-          tar -czvf ../auto-rb-recorder-macos-arm64.tar.gz *
+          tar -czvf ../auto-rb-recorder-macos-universal.tar.gz *
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
-          files: auto-rb-recorder-macos-arm64.tar.gz
+          files: auto-rb-recorder-macos-universal.tar.gz
           generate_release_notes: true
