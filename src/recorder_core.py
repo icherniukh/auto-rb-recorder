@@ -151,7 +151,7 @@ class PCMStreamRecorder:
         self.ring_buffer = deque(maxlen=self.buffer_maxlen)
         self.silence_count = 0
         self._chunk_count = 0
-        self.last_active_at: float = 0.0  # epoch time of last PASSIVE→ACTIVE transition
+        self.last_active_at: float = time.time()  # epoch time of last non-silent chunk
 
         self._raw_path: Optional[str] = None
         self._output_path: Optional[str] = None
@@ -162,7 +162,7 @@ class PCMStreamRecorder:
         self.ring_buffer.clear()
         self.silence_count = 0
         self._chunk_count = 0
-        self.last_active_at = 0.0
+        self.last_active_at = time.time()
 
     def process_chunk(self, chunk: bytes) -> None:
         rms = self._calculate_rms(chunk)
@@ -203,6 +203,7 @@ class PCMStreamRecorder:
                 self.state = "PASSIVE"
         else:
             self.silence_count = 0
+            self.last_active_at = time.time()
 
     def finalize(self) -> None:
         if self.state == "ACTIVE":
